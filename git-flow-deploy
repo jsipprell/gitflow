@@ -10,12 +10,18 @@ init() {
   DEPLOY_PREFIX=$(eval "echo `git config --get gitflow.prefix.deploytag`")
   FEATURE_PREFIX=$(git config --get gitflow.prefix.feature)
   PREFIX=$(git config --get gitflow.prefix.deploy)
+  HASH_ABBREV=$(eval "echo `git config --get core.abbrev`")
+  if [ "$HASH_ABBREV" = "" ]; then
+    HASH_ABBREV=7
+  fi
 }
 
 deploy_commits() {
   # emits a list of commit hashes on one branch (source_branch) that are not on another (target_branch).
   flags_reset
   DEFINE_boolean verbose false "include a single line description of each commit" v
+  DEFINE_boolean hash false "return commit hashes of $HASH_ABBREV length instead of the full sha1" H
+
   FLAGS "$@" || exit $?
   eval set -- "${FLAGS_ARGV}"
 
@@ -27,7 +33,16 @@ deploy_commits() {
     git_cmd="$git_cmd -v"
   fi
 
-  $git_cmd "$target_branch" "$source_branch" | do_grep ^+ | sed 's/^+ //g'
+  if flag hash && noflag verbose; then
+    local commit
+
+    $git_cmd "$target_branch" "$source_branch" | \
+      while read commit; do
+        startswith "$commit" '+ ' && echo "${commit:2:$HASH_ABBREV}"
+      done
+  else
+    $git_cmd "$target_branch" "$source_branch" | do_grep ^+ | sed 's/^+ //g'
+  fi
 }
 
 usage() {
@@ -485,7 +500,7 @@ cmd_merge() {
     exit 1
   fi
 
-  if [ "$(deploy_commits "$BRANCH" "$FEATURE_BRANCH" | wc -l)" -eq 1 ]; then
+  if [ "$(deploy_commits -H "$BRANCH" "$FEATURE_BRANCH" | wc -l)" -eq 1 ]; then
     git_do merge --ff "$FEATURE_BRANCH"
   else
     if noflag squash; then
@@ -609,7 +624,7 @@ cmd_diff() {
     show_cmd="$show_cmd --no-abbrev-commit"
   fi
 
-  commits=$(deploy_commits "$BRANCH" "$FEATURE_BRANCH")
+  commits=$(deploy_commits -H "$BRANCH" "$FEATURE_BRANCH")
   if [ "$commits" = "" ]; then
     if noflag raw; then
       echo "Feature branch '$FEATURE_BRANCH' is fully merged in to '$BRANCH', nothing to show."
@@ -644,7 +659,7 @@ cmd_checkall() {
   fi
 
   for feature in $feature_branches; do
-    commits=$(deploy_commits "$BRANCH" "$feature")
+    commits=$(deploy_commits -H "$BRANCH" "$feature")
     if [ "$commits" = "" ]; then
       let merged_count+=1
       if flag invert || flag verbose; then
