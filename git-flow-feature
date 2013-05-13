@@ -66,7 +66,7 @@ cmd_list() {
 	local feature_branches
 	local current_branch
 	local short_names
-	feature_branches=$(echo "$(git_local_branches)" | grep "^$PREFIX")
+	feature_branches=$(echo "$(git_local_branches)" | do_grep "^$PREFIX")
 	if [ -z "$feature_branches" ]; then
 		warn "No feature branches exist."
 		warn ""
@@ -76,7 +76,7 @@ cmd_list() {
 		warn ""
 		exit 0
 	fi
-	current_branch=$(git branch --no-color | grep '^\* ' | grep -v 'no branch' | sed 's/^* //g')
+	current_branch=$(git branch --no-color | do_grep '^\* ' | do_grep -v 'no branch' | sed 's/^* //g')
 	short_names=$(echo "$feature_branches" | sed "s ^$PREFIX  g")
 
 	# determine column width first
@@ -431,7 +431,7 @@ cmd_diff() {
 		BASE=$(git merge-base "$DEVELOP_BRANCH" "$BRANCH")
 		git diff "$BASE..$BRANCH"
 	else
-		if ! git_current_branch | grep -q "^$PREFIX"; then
+		if ! git_current_branch | do_grep -q "^$PREFIX"; then
 			die "Not on a feature branch. Name one explicitly."
 		fi
 

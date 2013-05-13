@@ -51,7 +51,7 @@ escape() {
 # set logic
 has() {
 	local item=$1; shift
-	echo " $@ " | grep -q " $(escape $item) "
+	echo " $@ " | do_grep -q " $(escape $item) "
 }
 
 # basic math
@@ -84,7 +84,7 @@ git_all_branches() { ( git branch --no-color; git branch -r --no-color) | sed 's
 git_all_tags() { git tag; }
 
 git_current_branch() {
-	git branch --no-color | grep '^\* ' | grep -v 'no branch' | sed 's/^* //g'
+	git branch --no-color | do_grep '^\* ' | do_grep -v 'no branch' | sed 's/^* //g'
 }
 
 git_is_clean_working_tree() {
@@ -227,7 +227,7 @@ gitflow_resolve_nameprefix() {
 		return 0
 	fi
 
-	matches=$(echo "$(git_local_branches)" | grep "^$(escape "$prefix$name")")
+	matches=$(echo "$(git_local_branches)" | do_grep "^$(escape "$prefix$name")")
 	num_matches=$(echo "$matches" | wc -l)
 	if [ -z "$matches" ]; then
 		# no prefix match, so take it literally
