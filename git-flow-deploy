@@ -39,6 +39,7 @@ usage() {
   echo "       git flow deploy checkout <version>"
   echo "       git flow deploy merge [-FPDdrs] [<version>] <feature-name>"
   echo "       git flow deploy check [<version>] <feature-name>"
+  echo "       git flow deploy checkall [-i] [<version>]"
   echo "       git flow deploy diff [-rvopn] [<version>] <feature-name>"
 }
 
@@ -618,6 +619,64 @@ cmd_diff() {
   fi
 }
 
+cmd_checkall() {
+  # List feature branches which are not fully merged into a deployment branch
+  DEFINE_boolean invert false "Inverse logic; display feature branches which are fully merged in" i
+
+  parse_args "$@"
+
+  require_deploy_prefix
+  expand_versionprefix_arg_optional
+
+  local feature_branches=$(git_local_branches | grep ^$FEATURE_PREFIX)
+  local feature
+  local commits
+  local -i merged_count=0
+  local -i unmerged_count=0
+  local -i ncommits
+  local ncommits_label
+  local merged_label
+  local unmerged_label
+
+  if [ "$feature_branches" = "" ]; then
+    die "There are no local feature branches."
+  fi
+
+  for feature in $feature_branches; do
+    commits=$(deploy_commits "$BRANCH" "$feature")
+    if [ "$commits" = "" ]; then
+      let merged_count+=1
+      if flag invert; then
+        echo "'$feature' is fully merged in to '$BRANCH'."
+      fi
+    else
+      let unmerged_count+=1
+      if noflag invert; then
+        ncommits=$(echo "$commits" | wc -l)
+        if [ $ncommits -eq 1 ]; then
+          ncommits_label='commit'
+        else
+          ncommits_label='commits'
+        fi
+        echo "'$feature' is not fully merged in to '$BRANCH' ($ncommits missing $ncommits_label)."
+      fi
+    fi
+  done
+
+  if [ $merged_count -eq 1 ]; then
+    merged_label='feature'
+  else
+    merged_label='features'
+  fi
+  if [ $unmerged_count -eq 1 ]; then
+    unmerged_label='feature'
+  else
+    unmerged_label='features'
+  fi
+
+  echo "Deployment branch '$BRANCH' has $merged_count $merged_label merged and $unmerged_count $unmerged_label unmerged."
+}
+
 cmd_check() {
   DEFINE_boolean porcelain false "Display only each commit hash with no additional information" p
 
@@ -629,6 +688,12 @@ cmd_check() {
   local -i ncommits=0
 
   require_deploy_prefix
+
+  if [ "$FEATURE" = "" ]; then
+    cmd_checkall "$@"
+    return $?
+  fi
+
   expand_versionprefix_and_featurename
 
   if noflag porcelain; then
