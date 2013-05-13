@@ -1,0 +1,691 @@
+#!/bin/bash
+#
+# git flow deployment branch addon.
+
+init() {
+  require_git_repo
+  require_gitflow_initialized
+  gitflow_load_settings
+  VERSION_PREFIX=$(eval "echo `git config --get gitflow.prefix.versiontag`")
+  DEPLOY_PREFIX=$(eval "echo `git config --get gitflow.prefix.deploytag`")
+  FEATURE_PREFIX=$(git config --get gitflow.prefix.feature)
+  PREFIX=$(git config --get gitflow.prefix.deploy)
+}
+
+deploy_commits() {
+  # emits a list of commit hashes on one branch (source_branch) that are not on another (target_branch).
+  flags_reset
+  DEFINE_boolean verbose false "include a single line description of each commit" v
+  FLAGS "$@" || exit $?
+  eval set -- "${FLAGS_ARGV}"
+
+  local target_branch="$1"
+  local source_branch="$2"
+  local git_cmd="git cherry"
+
+  if flag verbose; then
+    git_cmd="$git_cmd -v"
+  fi
+
+  $git_cmd "$target_branch" "$source_branch" | do_grep ^+ | sed 's@^+ @@g'
+}
+
+do_grep() {
+  grep --color=never "$@"
+}
+
+usage() {
+  echo "usage: git flow deploy [list] [-v]"
+  echo "       git flow deploy start [-F] <version> [<base>]"
+  echo "       git flow deploy finish [-FsumpkS] <version>"
+  echo "       git flow deploy publish <version>"
+  echo "       git flow deploy track <version>"
+  echo "       git flow deploy checkout <version>"
+  echo "       git flow deploy merge [-FPDdrs] [<version>] <feature-name>"
+  echo "       git flow deploy check [<version>] <feature-name>"
+  echo "       git flow deploy diff [-rvopn] [<version>] <feature-name>"
+}
+
+cmd_default() {
+  cmd_list "$@"
+}
+
+cmd_list() {
+  DEFINE_boolean verbose false 'verbose (more) output' v
+  parse_args "$@"
+  require_deploy_prefix
+
+  local deploy_branches
+  local current_branch
+  local short_names
+
+  deploy_branches=$(echo  "$(git_local_branches)" | do_grep "^$PREFIX$DEPLOY_PREFIX")
+  if [ -z "$deploy_branches" ]; then
+    warn "No deploy branches exist."
+    warn ""
+    warn "You can start a new deploy branch:"
+    warn ""
+    warn "    git flow deploy start <version> [<base>]"
+    warn ""
+    exit 0
+  fi
+
+  current_branch=$(git branch --no-color | do_grep '^\* ' | do_grep -v 'no branch' | sed 's/^* //g')
+  short_names=$(echo "$deploy_branches" | sed "s ^$PREFIX$DEPLOY_PREFIX  g")
+  # determine column width first
+  local width=0
+  local branch
+  for branch in $short_names; do
+    local len=${#branch}
+    width=$(max $width $len)
+  done
+  width=$(($width+3))
+
+  local branch
+  for branch in $short_names; do
+    local fullname=$PREFIX$DEPLOY_PREFIX$branch
+    local base=$(git merge-base "$fullname" "$DEVELOP_BRANCH")
+    local develop_sha=$(git rev-parse "$DEVELOP_BRANCH")
+    local branch_sha=$(git rev-parse "$fullname")
+    if [ "$fullname" = "$current_branch" ]; then
+      printf "* "
+    else
+      printf "  "
+    fi
+    if flag verbose; then
+      printf "%-${width}s" "$branch"
+      if [ "$branch_sha" = "$develop_sha" ]; then
+        printf "(no feature branch merges yet)"
+      else
+        local nicename=$(git rev-parse --short "$base")
+        printf "(based on $nicename)"
+      fi
+    else
+      printf "%s" "$branch"
+    fi
+    echo
+  done
+}
+
+cmd_help() {
+  usage
+  exit 0
+}
+
+parse_args() {
+  # parse options
+  FLAGS "$@" || exit $?
+  eval set -- "${FLAGS_ARGV}"
+
+  # read arguments into global variables
+  VERSION="$1"
+  BRANCH="$PREFIX$DEPLOY_PREFIX$VERSION"
+}
+
+parse_var_args_with_feature() {
+  # parse variable number of options, with feature name as a priority
+  FLAGS "$@" || exit $?
+  eval set -- "${FLAGS_ARGV}"
+
+  if [ $# -gt 1 ]; then
+    VERSION="$1"; shift
+    BRANCH="$PREFIX$DEPLOY_PREFIX$VERSION"
+  fi
+
+  FEATURE="$1"
+}
+
+require_version_arg() {
+  if [ "$VERSION" = "" ]; then
+    warn "Missing argument <version>"
+    usage
+    exit 1
+  fi
+}
+
+require_feature_arg() {
+  if [ "$FEATURE" = "" ]; then
+    warn "Missing argument <feature-name>"
+    usage
+    exit 1
+  fi
+}
+
+expand_versionprefix_arg() {
+  require_version_arg
+
+  local expanded_name
+  local exitcode
+  expanded_name=$(gitflow_resolve_nameprefix "$DEPLOY_PREFIX$VERSION" "$PREFIX")
+  exitcode=$?
+  case $exitcode in
+    0) NAME="$expanded_name"
+       BRANCH="$PREFIX$DEPLOY_PREFIX$VERSION"
+       ;;
+    *) exit 1 ;;
+  esac
+}
+
+expand_featurename_arg() {
+  require_feature_arg
+
+  local expanded_name
+  local exitcode
+  expanded_name=$(gitflow_resolve_nameprefix "$FEATURE" "$FEATURE_PREFIX")
+  exitcode=$?
+  case $exitcode in
+    0) FEATURE_BRANCH="$FEATURE_PREFIX$FEATURE"
+       FEATURE_NAME="$FEATURE"
+       FEATURE="$FEATURE_PREFIX$expanded_name"
+       ;;
+    *) exit 1 ;;
+  esac
+}
+
+require_base_is_on_develop() {
+  if ! git branch --no-color --contains "$BASE" 2>/dev/null \
+      | sed 's/[* ] //g' \
+        | do_grep -q "^$DEVELOP_BRANCH\$"; then
+    die "fatal: Given base '$BASE' is not a valid commit on '$DEVELOP_BRANCH'."
+  fi
+}
+
+require_deploy_prefix() {
+  if [ "$PREFIX" = "" ]; then
+    git_do config "gitflow.prefix.deploy" "deploy/"
+  fi
+
+  PREFIX=$(git config --get gitflow.prefix.deploy)
+  if [ "$PREFIX" = "" ]; then
+    die "fatal: Configuration option gitflow.prefix.deploy is not set."
+  fi
+
+  if [ "$VERSION" != "" ]; then
+    BRANCH="$PREFIX$DEPLOY_PREFIX$VERSION"
+  fi
+}
+
+cmd_start() {
+  DEFINE_boolean fetch false "fetch from $ORIGIN before performing finish" F
+  parse_args "$@"
+  BASE=${2:-$DEVELOP_BRANCH}
+
+  require_deploy_prefix
+  require_version_arg
+  require_base_is_on_develop
+
+  # sanity checks
+  require_clean_working_tree
+  require_branch_absent "$BRANCH"
+  require_tag_absent "$VERSION_PREFIX$VERSION"
+  require_tag_absent "$DEPLOY_PREFIX$VERSION"
+  if flag fetch; then
+    git_do fetch -q "$ORIGIN" "$DEVELOP_BRANCH"
+  fi
+  if has "$ORIGIN/$DEVELOP_BRANCH" $(git_remote_branches); then
+    require_branches_equal "$DEVELOP_BRANCH" "$ORIGIN/$DEVELOP_BRANCH"
+  fi
+
+  # create branch
+  git_do checkout -b "$BRANCH" "$BASE"
+
+  echo
+  echo "Summary of actions:"
+  echo "- A new branch '$BRANCH' was created, based on '$BASE'"
+  echo "- You are now on branch '$BRANCH'"
+  echo
+  echo "Follow-up actions:"
+  echo "- Merge features into the deployment branch with 'git flow deploy merge'"
+  echo "- Show commits from a feature branch that have not yet been merged into '$BRANCH'"
+  echo
+  echo "     git flow deploy diff <feature-name>"
+  echo
+  echo "- When completely done with this deployment (next devel cycle perhaps), run:"
+  echo
+  echo "     git flow deploy finish '$VERSION'"
+  echo
+}
+
+cmd_publish() {
+  parse_args "$@"
+  require_deploy_prefix
+  require_version_arg
+
+  # sanity checks
+  require_clean_working_tree
+  require_branch "$BRANCH"
+  git_do fetch -q "$ORIGIN"
+  require_branch_absent "$ORIGIN/$BRANCH"
+
+  # create remote branch
+  git_do push "$ORIGIN" "$BRANCH:refs/heads/$BRANCH"
+  git_do fetch -q "$ORIGIN"
+
+  # configure remote tracking
+  git_do config "branch.$BRANCH.remote" "$ORIGIN"
+  git_do config "branch.$BRANCH.merge" "refs/heads/$BRANCH"
+  git_do checkout "$BRANCH"
+
+  echo
+  echo "Summary of actions:"
+  echo "- A new remote branch '$BRANCH' was created"
+  echo "- The local branch '$BRANCH' was configured to track the remote branch"
+  echo "- You are now on branch '$BRANCH'"
+  echo
+}
+
+cmd_track() {
+  parse_args "$@"
+  require_deploy_prefix
+  require_version_arg
+
+  # sanity checks
+  require_clean_working_tree
+  require_branch_absent "$BRANCH"
+  git_do fetch -q "$ORIGIN"
+  require_branch "$ORIGIN/$BRANCH"
+
+  # create tracking branch
+  git_do checkout -b "$BRANCH" "$ORIGIN/$BRANCH"
+
+  echo
+  echo "Summary of actions:"
+  echo "- A new remote tracking branch '$BRANCH' was created."
+  echo "- You are now on branch '$BRANCH'"
+  echo
+}
+
+cmd_checkout() {
+  parse_args "$@"
+
+  require_deploy_prefix
+  expand_versionprefix_arg
+  git_do checkout "$BRANCH"
+}
+
+cmd_co() {
+  # Alias for checkout
+  cmd_checkout "$@"
+}
+
+cmd_finish() {
+  DEFINE_boolean fetch false "fetch from $ORIGIN before performing finish" F
+  DEFINE_boolean force_delete false "force deletion of deploy branch" D
+  DEFINE_boolean push false "push deletion of deploy branch to $ORIGIN" P
+
+  parse_args "$@"
+
+  local current_branch
+  local force_finish
+  require_deploy_prefix
+
+  if [ "$VERSION" = "" ]; then
+    BRANCH=$(git_current_branch | do_grep "^$PREFIX$DEPLOY_PREFIX")
+    if [ $? -ne 0 ]; then
+      die "Not on a deploy branch. Name one explicitly."
+    fi
+  else
+    expand_versionprefix_arg
+  fi
+
+  require_branch "$BRANCH"
+
+  # detect if there is an existing merge conflict
+  if [ -f "$DOT_GIT_DIR/.gitflow/MERGE_BASE" ]; then
+    FEATURE_BRANCH=$(cat "$DOT_GIT_DIR/.gitflow/MERGE_BASE")
+    FEATURE_NAME=$(echo "$FEATURE_BRANCH" | sed "s@^$FEATURE_PREFIX@@g")
+    force_finish=
+    if [ -f "$DOT_GIT_DIR/.gitflow/force.finish" ]; then
+      force_finish=$(cat "$DOT_GIT_DIR/.gitflow/force.finish")
+    fi
+
+    if [ "$force_finish" != "" -a "$force_finish" = "$FEATURE_BRANCH" ]; then
+      rm -f "$DOT_GIT_DIR/.gitflow/force.finish"
+      rm -f "$DOT_GIT_DIR/.gitflow/MERGE_BASE"
+    else
+      echo
+      echo "It appears as though you experienced a merge conflict."
+      echo "You can resolve conflicts via:"
+      echo "    git mergetool"
+      echo "    git commit"
+      echo
+      echo "You can then complete the merge by running it again:"
+      echo "    git flow deploy merge $FEATURE_NAME"
+      echo
+      echo "If there actually is no merge conflict, simply run this command again:"
+      echo "    git flow deploy finish $VERSION"
+      echo
+      echo "$FEATURE_BRANCH" > "$DOT_GIT_DIR/.gitflow/force.finish"
+      exit 1
+    fi
+  fi
+
+  # sanity checks
+  require_clean_working_tree
+
+  current_branch=$(git_current_branch)
+  if has "$ORIGIN/$BRANCH" $(git_remote_branches); then
+    if flag fetch; then
+      git_do fetch -q "$ORIGIN" "$BRANCH"
+    fi
+    require_branches_equal "$BRANCH" "$ORIGIN/$BRANCH"
+  fi
+
+  if [ "$current_branch" = "$BRANCH" ]; then
+    git_do checkout "$DEVELOP_BRANCH"
+    if [ $? -ne 0 ]; then
+      die "Checking out '$DEVELOP_BRANCH' failed."
+    fi
+    require_clean_working_tree
+  fi
+
+  if flag force_delete; then
+    git_do branch -D "$BRANCH"
+  else
+    git_do branch -d "$BRANCH"
+  fi
+
+  if [ $? -ne 0 ]; then
+    die "Unable to delete '$BRANCH'."
+  fi
+
+  if flag push; then
+    git_do push "$ORIGIN" ":refs/heads/$BRANCH"
+  fi
+
+  echo
+  echo "Summary of actions:"
+  echo "- The deploy branch '$BRANCH' was deleted."
+  if flag push; then
+    echo "- The deploy branch '$BRANCH' was also deleted on $ORIGIN."
+  fi
+  echo "- You are now on branch '$DEVELOP_BRANCH'."
+  echo
+}
+
+cmd_merge() {
+  DEFINE_boolean fetch false "fetch from $ORIGIN before performing merge" F
+  DEFINE_boolean push false "push to $ORIGIN after performing merge" P
+  DEFINE_boolean rebase false "rebase instead of merge" r
+  DEFINE_boolean delete false "delete feature branch after performing merge" d
+  DEFINE_boolean force_delete false "force deletion of feature branch after performing merge" D
+  DEFINE_boolean squash false "squash feature during merge" s
+
+  parse_var_args_with_feature "$@"
+
+  require_deploy_prefix
+  expand_featurename_arg
+
+  if [ "$VERSION" = "" ]; then
+    BRANCH=$(git_current_branch | do_grep "^$PREFIX$DEPLOY_PREFIX")
+    if [ $? -ne 0 ]; then
+      die "Not on a deploy branch. Name one explicitly."
+    fi
+  else
+    expand_versionprefix_arg
+  fi
+
+  # sanity checks
+  require_branch "$BRANCH"
+
+  # detect if we're restoring from a merge conflict
+  if [ -f "$DOT_GIT_DIR/.gitflow/MERGE_BASE" ]; then
+    if git_is_clean_working_tree; then
+      FINISH_BASE=$(cat "$DOT_GIT_DIR/.gitflow/MERGE_BASE")
+      # Since the working tree is now clean, either the user did a
+      # succesfull merge manually, or the merge was cancelled.
+      # We detect this using git_is_branch_merged_into()
+      if git_is_branch_merged_into "$FEATURE_BRANCH" "$FINISH_BASE"; then
+        rm -f "$DOT_GIT_DIR/.gitflow/MERGE_BASE"
+        helper_merge_cleanup
+        exit 0
+      else
+        # If the user cancelled the merge and decided to wait until later,
+        # that's fine. But we have to acknowledge this by removing the
+        # MERGE_BASE file and continuing normal execution of the finish
+        rm -f "$DOT_GIT_DIR/.gitflow/MERGE_BASE"
+      fi
+    else
+      echo
+      echo "Merge conflicts not resolved yet, use:"
+      echo "    git mergetool"
+      echo "    git commit"
+      echo 
+      echo "You can then complete the merge by running it again:"
+      echo "    git flow deploy merge $FEATURE_NAME"
+      echo
+      exit 1
+    fi
+  fi
+
+  # more sanity?
+  require_clean_working_tree
+
+  # Update local repo with remote changes first, if asked
+  if has "$ORIGIN/$BRANCH" $(git_remote_branches); then
+    if flag fetch; then
+      git_do fetch -q "$ORIGIN" "$BRANCH"
+    fi
+    require_branches_equal "$BRANCH" "$ORIGIN/$BRANCH"
+  fi
+  if has "$ORIGIN/$FEATURE_BRANCH" $(git_remote_branches); then
+    if flag fetch; then
+      git_do fetch -q "$ORIGIN" "$FEATURE_BRANCH"
+    fi
+    require_branches_equal "$FEATURE_BRANCH" "$ORIGIN/$FEATURE_BRANCH"
+  fi
+
+  # if the user wants to rebase, do that first
+  if flag rebase; then
+    warn "rebasing during a feature branch -> deploy branch merge not yet supported."
+    exit 1
+  fi
+
+  # merge into deploy branch
+  git_do checkout "$BRANCH"
+  if [ $? -ne 0 ]; then
+    warn "unable to checkout '$BRANCH', aborting."
+    exit 1
+  fi
+
+  if [ "$(deploy_commits "$BRANCH" "$FEATURE_BRANCH" | wc -l)" -eq 1 ]; then
+    git_do merge --ff "$FEATURE_BRANCH"
+  else
+    if noflag squash; then
+      git_do merge --no-ff "$FEATURE_BRANCH"
+    else
+      git_do merge --squash "$FEATURE_BRANCH" && git_do commit && git_do merge "$FEATURE_BRANCH"
+    fi
+  fi
+  if [ $? -ne 0 ]; then
+    mkdir -p "$DOT_GIT_DIR/.gitflow"
+    echo "$FEATURE_BRANCH" > "$DOT_GIT_DIR/.gitflow/MERGE_BASE"
+    echo
+    echo "There were merge conflicts. To resolve the merge conflict manually, use:"
+    echo "    git mergetool"
+    echo "    git commit"
+    echo 
+    echo "You can then complete the merge by running it again:"
+    echo "    git flow depoy merge $FEATURE_NAME"
+    echo
+    exit 1
+  fi
+
+  # when no merge conflict is detected, just cleanup the feature branch
+  helper_merge_cleanup
+}
+
+helper_merge_cleanup() {
+  # sanity checks
+  require_branch "$BRANCH"
+  require_branch "$FEATURE_BRANCH"
+  require_clean_working_tree
+
+  if flag push; then
+    git_do push "$ORIGIN" "$BRANCH"
+  fi
+
+  if flag delete; then
+    if flag force_delete; then
+      git_do branch -D "$FEATURE_BRANCH"
+    else
+      git_do branch -d "$FEATURE_BRANCH"
+    fi
+
+    if flag fetch; then
+      git_do push "$ORIGIN" ":refs/heads/$FEATURE_BRANCH"
+    fi
+  fi
+
+  echo
+  echo "Summary of actions:"
+  echo "- The feature branch '$FEATURE_BRANCH' was merged into '$BRANCH'."
+ 
+  if flag push; then
+    echo "- Deploy branch '$BRANCH' was pushed to $ORIGIN."
+  fi
+
+  if flag delete; then
+    echo "- Feature branch '$FEATURE_BRANCH' was deleted locally."
+    if flag fetch; then
+      echo "- Feature branch '$FEATURE_BRANCH' was deleted on $ORIGIN."
+    fi
+  else
+    echo "- Feature branch '$FEATURE_BRANCH' is still available."
+  fi
+  echo "- You are now on branch '$BRANCH'."
+  echo
+}
+
+cmd_diff() {
+  DEFINE_boolean raw false "Display each commit in raw format rather than a patch" r
+  DEFINE_boolean verbose false "Display full information on each commit along with the patch" v
+  DEFINE_boolean oneline true "Display a single line for each commit before the commit patch" o
+  DEFINE_boolean patchonly false "Display only the patches, suppress all other commit info" p
+  DEFINE_boolean nopatch false "Don't display patches, just show commit info" n
+  parse_var_args_with_feature "$@"
+
+  local show_cmd='git show'
+  local commits
+
+  require_deploy_prefix
+  expand_featurename_arg
+
+  if flag nopatch; then
+    show_cmd="git show -s"
+    if flag patchonly; then
+      die "Cannot use -p (patch) and -n (nopatch) together, these options are mutually exclusive."
+    elif flag raw; then
+      die "Cannot use -r (raw) with -n (nopatch), these options are mutually exclusive."
+    fi
+    if flag verbose; then
+      show_cmd="$show_cmd --format=fuller --no-abbrev-commit"
+    fi
+  elif flag patchonly; then
+    show_cmd="$show_cmd --format=format:"
+    if flag verbose || flag raw; then
+      die "Cannot use -r (raw) or -v (verbose) with -p, these options are mutually exclusive."
+    fi
+  elif flag verbose; then
+    show_cmd="$show_cmd --format=fuller"
+    if flag raw; then
+      die "Cannot use -r (raw) with -v, these options are mutually exclusive."
+    fi
+  elif flag raw; then
+    show_cmd="$show_cmd --raw"
+    if flag oneline; then
+      show_cmd="$show_cmd --oneline"
+    fi
+  fi
+
+  if [ "$show_cmd" = "git show" ]; then
+    show_cmd="$show_cmd -p"
+    if flag oneline; then
+      show_cmd="$show_cmd --oneline"
+    fi
+  fi
+
+  if flag oneline; then
+    show_cmd="$show_cmd --abbrev-commit"
+  fi
+  if noflag oneline; then
+    show_cmd="$show_cmd --no-abbrev-commit"
+  fi
+
+  if [ "$VERSION" != "" ]; then
+    expand_versionprefix_arg
+    commits=$(deploy_commits "$BRANCH" "$FEATURE_BRANCH")
+  else
+    BRANCH=$(git_current_branch | do_grep "^$PREFIX$DEPLOY_PREFIX")
+    if [ $? -ne 0 ]; then
+      die "Not on a deploy branch. Name one explicitly."
+    fi
+    commits=$(deploy_commits HEAD "$FEATURE_BRANCH")
+  fi
+
+  if [ "$commits" = "" ]; then
+    if noflag raw; then
+      echo "Feature branch '$FEATURE_BRANCH' is fully merged in to '$BRANCH', nothing to show."
+    fi
+  else
+    $show_cmd $commits
+  fi
+}
+
+cmd_check() {
+  DEFINE_boolean porcelain false "Display only each commit hash with no additional information" p
+
+  parse_var_args_with_feature "$@"
+
+  local deploy_commits='deploy_commits'
+  local commits
+  local commits_label
+  local -i ncommits=0
+
+  require_deploy_prefix
+  expand_featurename_arg
+
+  if noflag porcelain; then
+    deploy_commits='deploy_commits -v'
+  fi
+
+  if [ "$VERSION" != "" ]; then
+    expand_versionprefix_arg
+    commits=$($deploy_commits "$BRANCH" "$FEATURE_BRANCH")
+  else
+    BRANCH=$(git_current_branch | do_grep "^$PREFIX$DEPLOY_PREFIX")
+    if [ $? -ne 0 ]; then
+      die "Not on a deploy branch. Name one explicitly."
+    fi
+
+    commits=$($deploy_commits HEAD "$FEATURE_BRANCH")
+  fi
+
+  if [ "$commits" != "" ]; then
+    ncommits=$(echo "$commits" | wc -l)
+  fi
+
+  if noflag porcelain; then
+    if [ $ncommits -eq 0 ]; then
+      echo "'$FEATURE' is fully merged into '$BRANCH'."
+    else
+      if [ $ncommits -eq 1 ]; then
+        commits_label='commit'
+      else
+        commits_label='commits'
+      fi
+      echo "$ncommits $commits_label from '$FEATURE' not in '$BRANCH':"
+    fi
+  fi
+
+  if [ $ncommits -gt 0 ]; then
+    echo "$commits"
+  fi
+}
+
+cmd_feature() {
+  # feature is an alias to check
+  cmd_check "$@"
+}
+
+# vi: set sts=2 sw=2 ai et tw=0:

@@ -295,6 +295,18 @@ cmd_default() {
 		git_do config gitflow.prefix.support "$prefix"
 	fi
 
+  # Deployment branches
+  if ! git config --get gitflow.prefix.deploy >/dev/null 2>&1 || flag force; then
+  	default_suggestion=$(git config --get gitflow.prefix.deploy || echo deploy/)
+  	printf "Deployment branches? [$default_suggestion] "
+  	if noflag defaults; then
+  		read answer
+  	else
+  		printf "\n"
+  	fi
+  	[ "$answer" = "-" ] && prefix= || prefix=${answer:-$default_suggestion}
+  	git_do config gitflow.prefix.deploy "$prefix"
+  fi
 
 	# Version tag prefix
 	if ! git config --get gitflow.prefix.versiontag >/dev/null 2>&1 || flag force; then
@@ -309,7 +321,19 @@ cmd_default() {
 		git_do config gitflow.prefix.versiontag "$prefix"
 	fi
 
-
+  # Deployment tag prefix
+  if ! git config --get gitflow.prefix.deploytag >/dev/null 2>&1 || flag force; then
+  	default_suggestion=$(git config --get gitflow.prefix.deploytag || echo "")
+  	printf "Additional deployment branch/tag prefix? [$default_suggestion] "
+  	if noflag defaults; then
+  		read answer
+  	else
+  		printf "\n"
+  	fi
+  	[ "$answer" = "-" ] && prefix= || prefix=${answer:-$default_suggestion}
+  	git_do config gitflow.prefix.deploytag "$prefix"
+  fi
+  
 	# TODO: what to do with origin?
 }
 
