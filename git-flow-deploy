@@ -39,7 +39,7 @@ usage() {
   echo "       git flow deploy checkout <version>"
   echo "       git flow deploy merge [-FPDdrs] [<version>] <feature-name>"
   echo "       git flow deploy check [<version>] <feature-name>"
-  echo "       git flow deploy checkall [-i] [<version>]"
+  echo "       git flow deploy checkall [-iv] [<version>]"
   echo "       git flow deploy diff [-rvopn] [<version>] <feature-name>"
 }
 
@@ -622,6 +622,7 @@ cmd_diff() {
 cmd_checkall() {
   # List feature branches which are not fully merged into a deployment branch
   DEFINE_boolean invert false "Inverse logic; display feature branches which are fully merged in" i
+  DEFINE_boolean verbose false "Show both fully merged and unmerged feature branches" v
 
   parse_args "$@"
 
@@ -646,12 +647,12 @@ cmd_checkall() {
     commits=$(deploy_commits "$BRANCH" "$feature")
     if [ "$commits" = "" ]; then
       let merged_count+=1
-      if flag invert; then
+      if flag invert || flag verbose; then
         echo "'$feature' is fully merged in to '$BRANCH'."
       fi
     else
       let unmerged_count+=1
-      if noflag invert; then
+      if noflag invert || flag verbose; then
         ncommits=$(echo "$commits" | wc -l)
         if [ $ncommits -eq 1 ]; then
           ncommits_label='commit'
