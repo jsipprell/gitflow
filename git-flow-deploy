@@ -33,7 +33,7 @@ deploy_commits() {
 usage() {
   echo "usage: git flow deploy [list] [-v]"
   echo "       git flow deploy start [-F] <version> [<base>]"
-  echo "       git flow deploy finish [-FsumpkS] <version>"
+  echo "       git flow deploy finish [-FPD] [<version>]"
   echo "       git flow deploy publish <version>"
   echo "       git flow deploy track <version>"
   echo "       git flow deploy checkout <version>"
@@ -178,6 +178,24 @@ expand_featurename_arg() {
   esac
 }
 
+expand_versionprefix_arg_optional() {
+  # if a version arg is present use it, otherwise look at the current checkout
+  if [ "$VERSION" = "" ]; then
+    BRANCH=$(git_current_branch | do_grep "^$PREFIX$DEPLOY_PREFIX")
+    if [ $? -ne 0 ]; then
+      die "Not on a deploy branch. Name one explicitly."
+    fi
+    VERSION=$(echo "$BRANCH" | sed "s ^$PREFIX$DEPLOY_PREFIX  g")
+  else
+    expand_versionprefix_arg
+  fi
+}
+
+expand_versionprefix_and_featurename() {
+  expand_versionprefix_arg_optional
+  expand_featurename_arg
+}
+
 require_base_is_on_develop() {
   if ! git branch --no-color --contains "$BASE" 2>/dev/null \
       | sed 's/[* ] //g' \
@@ -314,16 +332,7 @@ cmd_finish() {
   local current_branch
   local force_finish
   require_deploy_prefix
-
-  if [ "$VERSION" = "" ]; then
-    BRANCH=$(git_current_branch | do_grep "^$PREFIX$DEPLOY_PREFIX")
-    if [ $? -ne 0 ]; then
-      die "Not on a deploy branch. Name one explicitly."
-    fi
-  else
-    expand_versionprefix_arg
-  fi
-
+  expand_versionprefix_arg_optional
   require_branch "$BRANCH"
 
   # detect if there is an existing merge conflict
@@ -410,16 +419,7 @@ cmd_merge() {
   parse_var_args_with_feature "$@"
 
   require_deploy_prefix
-  expand_featurename_arg
-
-  if [ "$VERSION" = "" ]; then
-    BRANCH=$(git_current_branch | do_grep "^$PREFIX$DEPLOY_PREFIX")
-    if [ $? -ne 0 ]; then
-      die "Not on a deploy branch. Name one explicitly."
-    fi
-  else
-    expand_versionprefix_arg
-  fi
+  expand_versionprefix_and_featurename
 
   # sanity checks
   require_branch "$BRANCH"
@@ -565,7 +565,7 @@ cmd_diff() {
   local commits
 
   require_deploy_prefix
-  expand_featurename_arg
+  expand_versionprefix_and_featurename
 
   if flag nopatch; then
     show_cmd="git show -s"
@@ -608,17 +608,7 @@ cmd_diff() {
     show_cmd="$show_cmd --no-abbrev-commit"
   fi
 
-  if [ "$VERSION" != "" ]; then
-    expand_versionprefix_arg
-    commits=$(deploy_commits "$BRANCH" "$FEATURE_BRANCH")
-  else
-    BRANCH=$(git_current_branch | do_grep "^$PREFIX$DEPLOY_PREFIX")
-    if [ $? -ne 0 ]; then
-      die "Not on a deploy branch. Name one explicitly."
-    fi
-    commits=$(deploy_commits HEAD "$FEATURE_BRANCH")
-  fi
-
+  commits=$(deploy_commits "$BRANCH" "$FEATURE_BRANCH")
   if [ "$commits" = "" ]; then
     if noflag raw; then
       echo "Feature branch '$FEATURE_BRANCH' is fully merged in to '$BRANCH', nothing to show."
@@ -639,23 +629,13 @@ cmd_check() {
   local -i ncommits=0
 
   require_deploy_prefix
-  expand_featurename_arg
+  expand_versionprefix_and_featurename
 
   if noflag porcelain; then
     deploy_commits='deploy_commits -v'
   fi
 
-  if [ "$VERSION" != "" ]; then
-    expand_versionprefix_arg
-    commits=$($deploy_commits "$BRANCH" "$FEATURE_BRANCH")
-  else
-    BRANCH=$(git_current_branch | do_grep "^$PREFIX$DEPLOY_PREFIX")
-    if [ $? -ne 0 ]; then
-      die "Not on a deploy branch. Name one explicitly."
-    fi
-
-    commits=$($deploy_commits HEAD "$FEATURE_BRANCH")
-  fi
+  commits=$($deploy_commits "$BRANCH" "$FEATURE_BRANCH")
 
   if [ "$commits" != "" ]; then
     ncommits=$(echo "$commits" | wc -l)
