@@ -27,7 +27,7 @@ deploy_commits() {
     git_cmd="$git_cmd -v"
   fi
 
-  $git_cmd "$target_branch" "$source_branch" | do_grep ^+ | sed 's@^+ @@g'
+  $git_cmd "$target_branch" "$source_branch" | do_grep ^+ | sed 's/^+ //g'
 }
 
 usage() {
@@ -338,7 +338,7 @@ cmd_finish() {
   # detect if there is an existing merge conflict
   if [ -f "$DOT_GIT_DIR/.gitflow/MERGE_BASE" ]; then
     FEATURE_BRANCH=$(cat "$DOT_GIT_DIR/.gitflow/MERGE_BASE")
-    FEATURE_NAME=$(echo "$FEATURE_BRANCH" | sed "s@^$FEATURE_PREFIX@@g")
+    FEATURE_NAME=$(echo "$FEATURE_BRANCH" | sed "s ^$FEATURE_PREFIX  g")
     force_finish=
     if [ -f "$DOT_GIT_DIR/.gitflow/force.finish" ]; then
       force_finish=$(cat "$DOT_GIT_DIR/.gitflow/force.finish")
