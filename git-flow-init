@@ -140,14 +140,14 @@ cmd_default() {
 		# considered (fresh repo or repo that contains branches)
 		local default_suggestion
 		local should_check_existence
-		branch_count=$(git_local_branches | grep -v "^${master_branch}\$" | wc -l)
+		branch_count=$(git_local_branches | do_grep -v "^${master_branch}\$" | wc -l)
 		if [ "$branch_count" -eq 0 ]; then
 			should_check_existence=NO
 			default_suggestion=$(git config --get gitflow.branch.develop || echo develop)
 		else
 			echo
 			echo "Which branch should be used for integration of the \"next release\"?"
-			git_local_branches | grep -v "^${master_branch}\$" | sed 's/^.*$/   - &/g'
+			git_local_branches | do_grep -v "^${master_branch}\$" | sed 's/^.*$/   - &/g'
 
 			should_check_existence=YES
 			default_suggestion=

@@ -63,7 +63,7 @@ cmd_list() {
 	local hotfix_branches
 	local current_branch
 	local short_names
-	hotfix_branches=$(echo "$(git_local_branches)" | grep "^$PREFIX")
+	hotfix_branches=$(echo "$(git_local_branches)" | do_grep "^$PREFIX")
 	if [ -z "$hotfix_branches" ]; then
 		warn "No hotfix branches exist."
                 warn ""
@@ -73,7 +73,7 @@ cmd_list() {
                 warn ""
 		exit 0
 	fi
-	current_branch=$(git branch --no-color | grep '^\* ' | grep -v 'no branch' | sed 's/^* //g')
+	current_branch=$(git branch --no-color | do_grep '^\* ' | do_grep -v 'no branch' | sed 's/^* //g')
 	short_names=$(echo "$hotfix_branches" | sed "s ^$PREFIX  g")
 
 	# determine column width first
@@ -143,13 +143,13 @@ require_version_arg() {
 require_base_is_on_master() {
 	if ! git branch --no-color --contains "$BASE" 2>/dev/null \
 			| sed 's/[* ] //g' \
-	  		| grep -q "^$MASTER_BRANCH\$"; then
+	  		| do_grep -q "^$MASTER_BRANCH\$"; then
 		die "fatal: Given base '$BASE' is not a valid commit on '$MASTER_BRANCH'."
 	fi
 }
 
 require_no_existing_hotfix_branches() {
-	local hotfix_branches=$(echo "$(git_local_branches)" | grep "^$PREFIX")
+	local hotfix_branches=$(echo "$(git_local_branches)" | do_grep "^$PREFIX")
 	local first_branch=$(echo ${hotfix_branches} | head -n1)
 	first_branch=${first_branch#$PREFIX}
 	[ -z "$hotfix_branches" ] || \

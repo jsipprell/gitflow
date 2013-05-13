@@ -40,6 +40,8 @@
 # set this to workaround expr problems in shFlags on freebsd
 if uname -s | egrep -iq 'bsd'; then export EXPR_COMPAT=1; fi
 
+if echo "" | grep -q --color=never "" >/dev/null 2>&1; then export GREP_NOCOLOR=1; else export GREP_NOCOLOR=0; fi
+
 # enable debug mode
 if [ "$DEBUG" = "yes" ]; then
 	set -x
@@ -62,6 +64,14 @@ usage() {
 	echo "   version   Shows version information."
 	echo
 	echo "Try 'git flow <subcommand> help' for details."
+}
+
+do_grep() {
+	if [ $GREP_NOCOLOR -eq 1 ]; then
+		grep --color=never "$@"
+	else
+		grep "$@"
+	fi
 }
 
 main() {
@@ -105,7 +115,7 @@ main() {
 	# in that case, we interpret this arg as a flag for the default
 	# command
 	SUBACTION="default"
-	if [ "$1" != "" ] && { ! echo "$1" | grep -q "^-"; } then
+	if [ "$1" != "" ] && { ! echo "$1" | do_grep -q "^-"; } then
 		SUBACTION="$1"; shift
 	fi
 	if ! type "cmd_$SUBACTION" >/dev/null 2>&1; then
