@@ -30,10 +30,6 @@ deploy_commits() {
   $git_cmd "$target_branch" "$source_branch" | do_grep ^+ | sed 's@^+ @@g'
 }
 
-do_grep() {
-  grep --color=never "$@"
-}
-
 usage() {
   echo "usage: git flow deploy [list] [-v]"
   echo "       git flow deploy start [-F] <version> [<base>]"
