@@ -41,6 +41,7 @@ SCRIPT_FILES+=git-flow-support
 SCRIPT_FILES+=git-flow-version
 SCRIPT_FILES+=gitflow-common
 SCRIPT_FILES+=gitflow-shFlags
+SCRIPT_FILES+=git-flow-deploy
 
 all:
 	@echo "usage: make install"

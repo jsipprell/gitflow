@@ -60,6 +60,7 @@ usage() {
 	echo "   release   Manage your release branches."
 	echo "   hotfix    Manage your hotfix branches."
 	echo "   support   Manage your support branches."
+	echo "   deploy    Manage your automated deployment branches."
 	echo "   version   Shows version information."
 	echo
 	echo "Try 'git flow <subcommand> help' for details."
