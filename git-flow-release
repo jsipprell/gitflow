@@ -63,7 +63,7 @@ cmd_list() {
 	local release_branches
 	local current_branch
 	local short_names
-	release_branches=$(echo "$(git_local_branches)" | grep "^$PREFIX")
+	release_branches=$(echo "$(git_local_branches)" | do_grep "^$PREFIX")
 	if [ -z "$release_branches" ]; then
 		warn "No release branches exist."
                 warn ""
@@ -74,7 +74,7 @@ cmd_list() {
 		exit 0
 	fi
 
-	current_branch=$(git branch --no-color | grep '^\* ' | grep -v 'no branch' | sed 's/^* //g')
+	current_branch=$(git branch --no-color | do_grep '^\* ' | do_grep -v 'no branch' | sed 's/^* //g')
 	short_names=$(echo "$release_branches" | sed "s ^$PREFIX  g")
 
 	# determine column width first
@@ -138,13 +138,13 @@ require_version_arg() {
 require_base_is_on_develop() {
 	if ! git_do branch --no-color --contains "$BASE" 2>/dev/null \
 			| sed 's/[* ] //g' \
-	  		| grep -q "^$DEVELOP_BRANCH\$"; then
+	  		| do_grep -q "^$DEVELOP_BRANCH\$"; then
 		die "fatal: Given base '$BASE' is not a valid commit on '$DEVELOP_BRANCH'."
 	fi
 }
 
 require_no_existing_release_branches() {
-	local release_branches=$(echo "$(git_local_branches)" | grep "^$PREFIX")
+	local release_branches=$(echo "$(git_local_branches)" | do_grep "^$PREFIX")
 	local first_branch=$(echo ${release_branches} | head -n1)
 	first_branch=${first_branch#$PREFIX}
 	[ -z "$release_branches" ] || \
