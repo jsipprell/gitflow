@@ -500,6 +500,8 @@ cmd_merge() {
     exit 1
   fi
 
+  require_branch "$FEATURE_BRANCH"
+
   if [ "$(deploy_commits -H "$BRANCH" "$FEATURE_BRANCH" | wc -l)" -eq 1 ]; then
     git_do merge --ff "$FEATURE_BRANCH"
   else
@@ -624,6 +626,7 @@ cmd_diff() {
     show_cmd="$show_cmd --no-abbrev-commit"
   fi
 
+  require_branch "$FEATURE_BRANCH"
   commits=$(deploy_commits -H "$BRANCH" "$FEATURE_BRANCH")
   if [ "$commits" = "" ]; then
     if noflag raw; then
@@ -716,8 +719,9 @@ cmd_check() {
     deploy_commits='deploy_commits -v'
   fi
 
+  require_branch "$FEATURE_BRANCH"
   commits=$($deploy_commits "$BRANCH" "$FEATURE_BRANCH")
-
+  
   if [ "$commits" != "" ]; then
     ncommits=$(echo "$commits" | wc -l)
   fi
