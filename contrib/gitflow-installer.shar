@@ -822,6 +822,8 @@ X    warn "unable to checkout '$BRANCH', aborting."
 X    exit 1
 X  fi
 X
+X  require_branch "$FEATURE_BRANCH"
+X
 X  if [ "$(deploy_commits -H "$BRANCH" "$FEATURE_BRANCH" | wc -l)" -eq 1 ]; then
 X    git_do merge --ff "$FEATURE_BRANCH"
 X  else
@@ -946,6 +948,7 @@ X  if noflag oneline; then
 X    show_cmd="$show_cmd --no-abbrev-commit"
 X  fi
 X
+X  require_branch "$FEATURE_BRANCH"
 X  commits=$(deploy_commits -H "$BRANCH" "$FEATURE_BRANCH")
 X  if [ "$commits" = "" ]; then
 X    if noflag raw; then
@@ -1038,8 +1041,9 @@ X  if noflag porcelain; then
 X    deploy_commits='deploy_commits -v'
 X  fi
 X
+X  require_branch "$FEATURE_BRANCH"
 X  commits=$($deploy_commits "$BRANCH" "$FEATURE_BRANCH")
-X
+X  
 X  if [ "$commits" != "" ]; then
 X    ncommits=$(echo "$commits" | wc -l)
 X  fi
@@ -4538,7 +4542,7 @@ exit
 Version: GnuPG/MacGPG2 v2.0.19 (Darwin)
 Comment: GPGTools - http://gpgtools.org
 
-iEYEARECAAYFAlGTD4AACgkQCPj7FrCSJ+DiYwCfaswtVGeGm2mkoGrj5cwBCyqh
-i24AnjhywO5FA1WpVaufLOCPd5URnyLj
-=9qcK
+iEYEARECAAYFAlGURGkACgkQCPj7FrCSJ+AOvgCdHICC14PxyQcoa+6iWfbEVroM
+hs8AnjcMKb0JY2DD6qEdffyo3RH6Sjtx
+=GQub
 -----END PGP SIGNATURE-----
