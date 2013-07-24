@@ -1652,6 +1652,24 @@ X  require_gitflow_initialized
 X  gitflow_load_settings
 X  VERSION_PREFIX=$(eval "echo `git config --get gitflow.prefix.versiontag`")
 X  PREFIX=$(git config --get gitflow.prefix.hotfix)
+X  if ! git config --get --bool gitflow.always-sign >/dev/null 2>&1; then
+X    FORCE_SIGN=$(git config --get gitflow.always-sign 2>/dev/null)
+X    if [ "$FORCE_SIGN" != "" ]; then
+X      if echo "$FORCE_SIGN" | grep -q hotfix; then
+X        FORCE_SIGN=$FLAGS_TRUE
+X      else
+X        FORCE_SIGN=$FLAGS_FALSE
+X      fi
+X    else
+X      FORCE_SIGN=$FLAGS_FALSE
+X    fi
+X  else
+X    if [ "$(git config --get --bool gitflow.always-sign)" = "true" ]; then
+X      FORCE_SIGN=$FLAGS_TRUE
+X    else
+X      FORCE_SIGN=$FLAGS_FALSE
+X    fi
+X  fi
 X}
 X
 Xusage() {
@@ -1860,6 +1878,10 @@ X	DEFINE_boolean keep false "keep branch after performing finish" k
 X	DEFINE_boolean notag false "don't tag this release" n
 X	parse_args "$@"
 X	require_version_arg
+X
+X	if [ $FORCE_SIGN -eq $FLAGS_TRUE ]; then
+X		FLAGS_sign=$FLAGS_TRUE
+X	fi
 X
 X	# handle flags that imply other flags
 X	if [ "$FLAGS_signingkey" != "" ]; then
@@ -2350,6 +2372,24 @@ X  require_gitflow_initialized
 X  gitflow_load_settings
 X  VERSION_PREFIX=$(eval "echo `git config --get gitflow.prefix.versiontag`")
 X  PREFIX=$(git config --get gitflow.prefix.release)
+X  if ! git config --get --bool gitflow.always-sign >/dev/null 2>&1; then
+X    FORCE_SIGN=$(git config --get gitflow.always-sign 2>/dev/null)
+X    if [ "$FORCE_SIGN" != "" ]; then
+X      if echo "$FORCE_SIGN" | grep -q release; then
+X        FORCE_SIGN=$FLAGS_TRUE
+X      else
+X        FORCE_SIGN=$FLAGS_FALSE
+X      fi
+X    else
+X      FORCE_SIGN=$FLAGS_FALSE
+X    fi
+X  else
+X    if [ "$(git config --get --bool gitflow.always-sign)" = "true" ]; then
+X      FORCE_SIGN=$FLAGS_TRUE
+X    else
+X      FORCE_SIGN=$FLAGS_FALSE
+X    fi
+X  fi
 X}
 X
 Xusage() {
@@ -2511,6 +2551,10 @@ X	require_version_arg
 X
 X	# handle flags that imply other flags
 X	if [ "$FLAGS_signingkey" != "" ]; then
+X		FLAGS_sign=$FLAGS_TRUE
+X	fi
+X
+X	if [ $FORCE_SIGN -eq $FLAGS_TRUE ]; then
 X		FLAGS_sign=$FLAGS_TRUE
 X	fi
 X
@@ -2899,7 +2943,7 @@ X# those of the authors and should not be interpreted as representing official
 X# policies, either expressed or implied, of Vincent Driessen.
 X#
 X
-XGITFLOW_VERSION=0.4.2-pre-2
+XGITFLOW_VERSION=0.4.2-pre-3
 X
 Xusage() {
 X	echo "usage: git flow version"
@@ -4542,7 +4586,7 @@ exit
 Version: GnuPG/MacGPG2 v2.0.19 (Darwin)
 Comment: GPGTools - http://gpgtools.org
 
-iEYEARECAAYFAlGURGkACgkQCPj7FrCSJ+AOvgCdHICC14PxyQcoa+6iWfbEVroM
-hs8AnjcMKb0JY2DD6qEdffyo3RH6Sjtx
-=GQub
+iEYEARECAAYFAlHwV3QACgkQNykkosWsHaJfdQCgu45SuUpR1GDMz3t2/lKuUx3P
+RdsAn1RItpvc54vDWXgVsDQeIMbrVVD8
+=NeF7
 -----END PGP SIGNATURE-----
