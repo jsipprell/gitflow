@@ -1118,6 +1118,24 @@ X  require_git_repo
 X  require_gitflow_initialized
 X  gitflow_load_settings
 X  PREFIX=$(git config --get gitflow.prefix.feature)
+X  if ! git config --get --bool gitflow.always-sign >/dev/null 2>&1; then
+X    FORCE_SIGN=$(git config --get gitflow.always-sign 2>/dev/null)
+X    if [ "$FORCE_SIGN" != "" ]; then
+X      if echo "$FORCE_SIGN" | grep -q feature; then
+X        FORCE_SIGN=$FLAGS_TRUE
+X      else
+X        FORCE_SIGN=$FLAGS_FALSE
+X      fi
+X    else
+X      FORCE_SIGN=$FLAGS_FALSE
+X    fi
+X  else
+X    if [ "$(git config --get --bool gitflow.always-sign)" = "true" ]; then
+X      FORCE_SIGN=$FLAGS_TRUE
+X    else
+X      FORCE_SIGN=$FLAGS_FALSE
+X    fi
+X  fi
 X}
 X
 Xusage() {
@@ -1312,11 +1330,23 @@ X	DEFINE_boolean rebase false "rebase instead of merge" r
 X	DEFINE_boolean keep false "keep branch after performing finish" k
 X	DEFINE_boolean force_delete false "force delete feature branch after finish" D
 X	DEFINE_boolean squash false "squash feature during merge" S
+X	DEFINE_boolean sign false "sign the feature merge back into develop" i
+X	DEFINE_string signingkey "" "use the given GPG-key for the digital signature (implies -i)" u
+X
 X	parse_args "$@"
 X	expand_nameprefix_arg_or_current
 X
 X	# sanity checks
 X	require_branch "$BRANCH"
+X
+X	# handle flags that imply other flags
+X	if [ "$FLAGS_signingkey" != "" ]; then
+X		FLAGS_sign=$FLAGS_TRUE
+X	fi
+X
+X	if [ $FORCE_SIGN -eq $FLAGS_TRUE ]; then
+X		FLAGS_sign=$FLAGS_TRUE
+X	fi
 X
 X	# detect if we're restoring from a merge conflict
 X	if [ -f "$DOT_GIT_DIR/.gitflow/MERGE_BASE" ]; then
@@ -1387,17 +1417,23 @@ X			exit 1
 X		fi
 X	fi
 X
+X	if flag sign; then
+X		merge_opts='--gpg-sign'
+X		[ "$FLAGS_signingkey" != "" ] && merge_opts="${merge_opts}='$FLAGS_signingkey'"
+X	else
+X		merge_opts=
+X	fi
 X	# merge into BASE
 X	git_do checkout "$DEVELOP_BRANCH"
 X	if [ "$(git rev-list -n2 "$DEVELOP_BRANCH..$BRANCH" | wc -l)" -eq 1 ]; then
-X		git_do merge --ff "$BRANCH"
+X		git_do merge $merge_opts --ff "$BRANCH"
 X	else
 X		if noflag squash; then
-X		    git_do merge --no-ff "$BRANCH"
+X		    git_do merge $merge_opts --no-ff "$BRANCH"
 X		else
 X			git_do merge --squash "$BRANCH"
 X			git_do commit
-X			git_do merge "$BRANCH"
+X			git_do merge $merge_opts "$BRANCH"
 X		fi
 X	fi
 X
@@ -1870,6 +1906,7 @@ X
 Xcmd_finish() {
 X	DEFINE_boolean fetch false "fetch from $ORIGIN before performing finish" F
 X	DEFINE_boolean sign false "sign the release tag cryptographically" s
+X	DEFINE_boolean sign_merge false "sign the merge into master/develop cryptographically" i
 X	DEFINE_string signingkey "" "use the given GPG-key for the digital signature (implies -s)" u
 X	DEFINE_string message "" "use the given tag message" m
 X	DEFINE_string messagefile "" "use the contents of the given file as tag message" f
@@ -1881,6 +1918,7 @@ X	require_version_arg
 X
 X	if [ $FORCE_SIGN -eq $FLAGS_TRUE ]; then
 X		FLAGS_sign=$FLAGS_TRUE
+X		FLAGS_sign_merge=$FLAGS_TRUE
 X	fi
 X
 X	# handle flags that imply other flags
@@ -1904,13 +1942,20 @@ X	if has "$ORIGIN/$DEVELOP_BRANCH" $(git_remote_branches); then
 X		require_branches_equal "$DEVELOP_BRANCH" "$ORIGIN/$DEVELOP_BRANCH"
 X	fi
 X
+X	if flag sign_merge; then
+X		merge_opts='--gpg-sign'
+X		[ "$FLAGS_signingkey" != "" ] && merge_opts="${merge_opts}='$FLAGS_signingkey'"
+X	else
+X		merge_opts=
+X	fi
+X
 X	# try to merge into master
 X	# in case a previous attempt to finish this release branch has failed,
 X	# but the merge into master was successful, we skip it now
 X	if ! git_is_branch_merged_into "$BRANCH" "$MASTER_BRANCH"; then
 X		git_do checkout "$MASTER_BRANCH" || \
 X		  die "Could not check out $MASTER_BRANCH."
-X		git_do merge --no-ff "$BRANCH" || \
+X		git_do merge $merge_opts --no-ff "$BRANCH" || \
 X		  die "There were merge conflicts."
 X		  # TODO: What do we do now?
 X	fi
@@ -1940,7 +1985,7 @@ X		  die "Could not check out $DEVELOP_BRANCH."
 X
 X		# TODO: Actually, accounting for 'git describe' pays, so we should
 X		# ideally git merge --no-ff $tagname here, instead!
-X		git_do merge --no-ff "$BRANCH" || \
+X		git_do merge $merge_opts --no-ff "$BRANCH" || \
 X		  die "There were merge conflicts."
 X		  # TODO: What do we do now?
 X	fi
@@ -2538,6 +2583,7 @@ X
 Xcmd_finish() {
 X	DEFINE_boolean fetch false "fetch from $ORIGIN before performing finish" F
 X	DEFINE_boolean sign false "sign the release tag cryptographically" s
+X	DEFINE_boolean sign_merge false "sign the merge back into develop/master cryptographically" i
 X	DEFINE_string signingkey "" "use the given GPG-key for the digital signature (implies -s)" u
 X	DEFINE_string message "" "use the given tag message" m
 X	DEFINE_string messagefile "" "use the contents of the given file as a tag message" f
@@ -2556,6 +2602,7 @@ X	fi
 X
 X	if [ $FORCE_SIGN -eq $FLAGS_TRUE ]; then
 X		FLAGS_sign=$FLAGS_TRUE
+X		FLAGS_sign_merge=$FLAGS_TRUE
 X	fi
 X
 X	# sanity checks
@@ -2574,6 +2621,13 @@ X	if has "$ORIGIN/$DEVELOP_BRANCH" $(git_remote_branches); then
 X		require_branches_equal "$DEVELOP_BRANCH" "$ORIGIN/$DEVELOP_BRANCH"
 X	fi
 X
+X	if flag sign_merge; then
+X		merge_opts='--gpg-sign'
+X		[ "$FLAGS_signingkey" != "" ] && merge_opts="${merge_opts}='$FLAGS_signingkey'"
+X	else
+X		merge_opts=
+X	fi
+X
 X	# try to merge into master
 X	# in case a previous attempt to finish this release branch has failed,
 X	# but the merge into master was successful, we skip it now
@@ -2581,11 +2635,11 @@ X	if ! git_is_branch_merged_into "$BRANCH" "$MASTER_BRANCH"; then
 X		git_do checkout "$MASTER_BRANCH" || \
 X		  die "Could not check out $MASTER_BRANCH."
 X		if noflag squash; then
-X			git_do merge --no-ff "$BRANCH" || \
+X			git_do merge $merge_opts --no-ff "$BRANCH" || \
 X				die "There were merge conflicts."
 X				# TODO: What do we do now?
 X		else
-X			git_do merge --squash "$BRANCH" || \
+X			git_do merge $merge_opts --squash "$BRANCH" || \
 X				die "There were merge conflicts."
 X			git_do commit
 X		fi
@@ -2617,11 +2671,11 @@ X
 X		# TODO: Actually, accounting for 'git describe' pays, so we should
 X		# ideally git merge --no-ff $tagname here, instead!
 X		if noflag squash; then
-X			git_do merge --no-ff "$BRANCH" || \
+X			git_do merge $merge_opts --no-ff "$BRANCH" || \
 X				die "There were merge conflicts."
 X				# TODO: What do we do now?
 X		else
-X			git_do merge --squash "$BRANCH" || \
+X			git_do merge $merge_opts --squash "$BRANCH" || \
 X				die "There were merge conflicts."
 X				# TODO: What do we do now?
 X			git_do commit
@@ -2762,6 +2816,24 @@ X  require_gitflow_initialized
 X  gitflow_load_settings
 X  VERSION_PREFIX=$(eval "echo `git config --get gitflow.prefix.versiontag`")
 X  PREFIX=$(git config --get gitflow.prefix.support)
+X  if ! git config --get --bool gitflow.always-sign >/dev/null 2>&1; then
+X    FORCE_SIGN=$(git config --get gitflow.always-sign 2>/dev/null)
+X    if [ "$FORCE_SIGN" != "" ]; then
+X      if echo "$FORCE_SIGN" | grep -q support; then
+X        FORCE_SIGN=$FLAGS_TRUE
+X      else
+X        FORCE_SIGN=$FLAGS_FALSE
+X      fi
+X    else
+X      FORCE_SIGN=$FLAGS_FALSE
+X    fi
+X  else
+X    if [ "$(git config --get --bool gitflow.always-sign)" = "true" ]; then
+X      FORCE_SIGN=$FLAGS_TRUE
+X    else
+X      FORCE_SIGN=$FLAGS_FALSE
+X    fi
+X  fi
 X}
 X
 Xwarn "note: The support subcommand is still very EXPERIMENTAL!"
@@ -2943,7 +3015,7 @@ X# those of the authors and should not be interpreted as representing official
 X# policies, either expressed or implied, of Vincent Driessen.
 X#
 X
-XGITFLOW_VERSION=0.4.2-pre-3
+XGITFLOW_VERSION=0.4.2-pre-4
 X
 Xusage() {
 X	echo "usage: git flow version"
@@ -4586,7 +4658,7 @@ exit
 Version: GnuPG/MacGPG2 v2.0.19 (Darwin)
 Comment: GPGTools - http://gpgtools.org
 
-iEYEARECAAYFAlHwV3QACgkQNykkosWsHaJfdQCgu45SuUpR1GDMz3t2/lKuUx3P
-RdsAn1RItpvc54vDWXgVsDQeIMbrVVD8
-=NeF7
+iEYEARECAAYFAlIT7c4ACgkQNykkosWsHaLwLgCbB+OEXxHzLdZ5QRp6vnweVcPx
+aH0AoIBDQHA6Kke+AgR8pI4ruQ7foB6I
+=VNGI
 -----END PGP SIGNATURE-----
