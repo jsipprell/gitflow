@@ -208,6 +208,7 @@ cmd_start() {
 cmd_finish() {
 	DEFINE_boolean fetch false "fetch from $ORIGIN before performing finish" F
 	DEFINE_boolean sign false "sign the release tag cryptographically" s
+	DEFINE_boolean sign_merge false "sign the merge back into develop/master cryptographically" i
 	DEFINE_string signingkey "" "use the given GPG-key for the digital signature (implies -s)" u
 	DEFINE_string message "" "use the given tag message" m
 	DEFINE_string messagefile "" "use the contents of the given file as a tag message" f
@@ -226,6 +227,7 @@ cmd_finish() {
 
 	if [ $FORCE_SIGN -eq $FLAGS_TRUE ]; then
 		FLAGS_sign=$FLAGS_TRUE
+		FLAGS_sign_merge=$FLAGS_TRUE
 	fi
 
 	# sanity checks
@@ -244,6 +246,13 @@ cmd_finish() {
 		require_branches_equal "$DEVELOP_BRANCH" "$ORIGIN/$DEVELOP_BRANCH"
 	fi
 
+	if flag sign_merge; then
+		merge_opts='--gpg-sign'
+		[ "$FLAGS_signingkey" != "" ] && merge_opts="${merge_opts}='$FLAGS_signingkey'"
+	else
+		merge_opts=
+	fi
+
 	# try to merge into master
 	# in case a previous attempt to finish this release branch has failed,
 	# but the merge into master was successful, we skip it now
@@ -251,11 +260,11 @@ cmd_finish() {
 		git_do checkout "$MASTER_BRANCH" || \
 		  die "Could not check out $MASTER_BRANCH."
 		if noflag squash; then
-			git_do merge --no-ff "$BRANCH" || \
+			git_do merge $merge_opts --no-ff "$BRANCH" || \
 				die "There were merge conflicts."
 				# TODO: What do we do now?
 		else
-			git_do merge --squash "$BRANCH" || \
+			git_do merge $merge_opts --squash "$BRANCH" || \
 				die "There were merge conflicts."
 			git_do commit
 		fi
@@ -287,11 +296,11 @@ cmd_finish() {
 		# TODO: Actually, accounting for 'git describe' pays, so we should
 		# ideally git merge --no-ff $tagname here, instead!
 		if noflag squash; then
-			git_do merge --no-ff "$BRANCH" || \
+			git_do merge $merge_opts --no-ff "$BRANCH" || \
 				die "There were merge conflicts."
 				# TODO: What do we do now?
 		else
-			git_do merge --squash "$BRANCH" || \
+			git_do merge $merge_opts --squash "$BRANCH" || \
 				die "There were merge conflicts."
 				# TODO: What do we do now?
 			git_do commit
