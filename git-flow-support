@@ -42,6 +42,24 @@ init() {
   gitflow_load_settings
   VERSION_PREFIX=$(eval "echo `git config --get gitflow.prefix.versiontag`")
   PREFIX=$(git config --get gitflow.prefix.support)
+  if ! git config --get --bool gitflow.always-sign >/dev/null 2>&1; then
+    FORCE_SIGN=$(git config --get gitflow.always-sign 2>/dev/null)
+    if [ "$FORCE_SIGN" != "" ]; then
+      if echo "$FORCE_SIGN" | grep -q support; then
+        FORCE_SIGN=$FLAGS_TRUE
+      else
+        FORCE_SIGN=$FLAGS_FALSE
+      fi
+    else
+      FORCE_SIGN=$FLAGS_FALSE
+    fi
+  else
+    if [ "$(git config --get --bool gitflow.always-sign)" = "true" ]; then
+      FORCE_SIGN=$FLAGS_TRUE
+    else
+      FORCE_SIGN=$FLAGS_FALSE
+    fi
+  fi
 }
 
 warn "note: The support subcommand is still very EXPERIMENTAL!"
