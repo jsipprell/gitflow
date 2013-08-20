@@ -41,6 +41,24 @@ init() {
   require_gitflow_initialized
   gitflow_load_settings
   PREFIX=$(git config --get gitflow.prefix.feature)
+  if ! git config --get --bool gitflow.always-sign >/dev/null 2>&1; then
+    FORCE_SIGN=$(git config --get gitflow.always-sign 2>/dev/null)
+    if [ "$FORCE_SIGN" != "" ]; then
+      if echo "$FORCE_SIGN" | grep -q feature; then
+        FORCE_SIGN=$FLAGS_TRUE
+      else
+        FORCE_SIGN=$FLAGS_FALSE
+      fi
+    else
+      FORCE_SIGN=$FLAGS_FALSE
+    fi
+  else
+    if [ "$(git config --get --bool gitflow.always-sign)" = "true" ]; then
+      FORCE_SIGN=$FLAGS_TRUE
+    else
+      FORCE_SIGN=$FLAGS_FALSE
+    fi
+  fi
 }
 
 usage() {
@@ -235,11 +253,23 @@ cmd_finish() {
 	DEFINE_boolean keep false "keep branch after performing finish" k
 	DEFINE_boolean force_delete false "force delete feature branch after finish" D
 	DEFINE_boolean squash false "squash feature during merge" S
+	DEFINE_boolean sign false "sign the feature merge back into develop" i
+	DEFINE_string signingkey "" "use the given GPG-key for the digital signature (implies -i)" u
+
 	parse_args "$@"
 	expand_nameprefix_arg_or_current
 
 	# sanity checks
 	require_branch "$BRANCH"
+
+	# handle flags that imply other flags
+	if [ "$FLAGS_signingkey" != "" ]; then
+		FLAGS_sign=$FLAGS_TRUE
+	fi
+
+	if [ $FORCE_SIGN -eq $FLAGS_TRUE ]; then
+		FLAGS_sign=$FLAGS_TRUE
+	fi
 
 	# detect if we're restoring from a merge conflict
 	if [ -f "$DOT_GIT_DIR/.gitflow/MERGE_BASE" ]; then
@@ -310,17 +340,23 @@ cmd_finish() {
 		fi
 	fi
 
+	if flag sign; then
+		merge_opts='--gpg-sign'
+		[ "$FLAGS_signingkey" != "" ] && merge_opts="${merge_opts}='$FLAGS_signingkey'"
+	else
+		merge_opts=
+	fi
 	# merge into BASE
 	git_do checkout "$DEVELOP_BRANCH"
 	if [ "$(git rev-list -n2 "$DEVELOP_BRANCH..$BRANCH" | wc -l)" -eq 1 ]; then
-		git_do merge --ff "$BRANCH"
+		git_do merge $merge_opts --ff "$BRANCH"
 	else
 		if noflag squash; then
-		    git_do merge --no-ff "$BRANCH"
+		    git_do merge $merge_opts --no-ff "$BRANCH"
 		else
 			git_do merge --squash "$BRANCH"
 			git_do commit
-			git_do merge "$BRANCH"
+			git_do merge $merge_opts "$BRANCH"
 		fi
 	fi
 
