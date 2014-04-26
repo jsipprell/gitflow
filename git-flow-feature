@@ -340,27 +340,48 @@ cmd_finish() {
 		fi
 	fi
 
+	merge_opts=
+	amend_opts=
 	if flag sign; then
-		merge_opts='--gpg-sign'
-		[ "$FLAGS_signingkey" != "" ] && merge_opts="${merge_opts}='$FLAGS_signingkey'"
-	else
-		merge_opts=
+		if flag squash; then
+			amend_opts='--gpg-sign'
+			[ "$FLAGS_signingkey" != "" ] && amend_opts="${amend_opts}='$FLAGS_signingkey'"
+		else
+			merge_opts='--gpg-sign'
+			[ "$FLAGS_signingkey" != "" ] && merge_opts="${merge_opts}='$FLAGS_signingkey'"
+		fi
 	fi
 	# merge into BASE
 	git_do checkout "$DEVELOP_BRANCH"
-	if [ "$(git rev-list -n2 "$DEVELOP_BRANCH..$BRANCH" | wc -l)" -eq 1 ]; then
+	error=$?
+	if [ $error -eq 0 -a "$(git rev-list -n2 "$DEVELOP_BRANCH..$BRANCH" | wc -l)" -eq 1 ]; then
 		git_do merge $merge_opts --ff "$BRANCH"
-	else
+	elif [ $error -eq 0 ]; then
 		if noflag squash; then
 		    git_do merge $merge_opts --no-ff "$BRANCH"
+		    error=$?
 		else
 			git_do merge --squash "$BRANCH"
-			git_do commit
-			git_do merge $merge_opts "$BRANCH"
+			error=$?
+			if [ $error -eq 0 ]; then
+				git_do commit
+				error=$?
+			fi
+			if [ $error -eq 0 -a "$amend_opts" != "" ]; then
+				git_do amend $amend_opts
+				error=$?
+			fi
+			if [ $error -eq 0 -a "$merge_opts" != "" ]; then
+				git_do merge $merge_opts "$BRANCH"
+				error=$?
+			fi
+			if [ $error -eq 0 ] && noflag force_delete; then
+				FLAGS_keep=1
+			fi
 		fi
 	fi
 
-	if [ $? -ne 0 ]; then
+	if [ $error -ne 0 ]; then
 		# oops.. we have a merge conflict!
 		# write the given $DEVELOP_BRANCH to a temporary file (we need it later)
 		mkdir -p "$DOT_GIT_DIR/.gitflow"
